@@ -7,7 +7,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -71,7 +70,7 @@ const_docs, bns_docs = load_and_split_docs()
 
 # --- Cached Retriever Setup per Domain ---
 @st.cache_resource
-def get_retriever_for_domain(domain_name):
+def get_retrievers_for_domain(domain_name):
     if domain_name == "Constitution":
         selected_docs = const_docs
     elif domain_name == "BNS":
@@ -89,14 +88,15 @@ def get_retriever_for_domain(domain_name):
     )
 
     bm25 = BM25Retriever.from_documents(selected_docs)
-    bm25.k = 10
-    chroma_retriever = vector_store.as_retriever(search_kwargs={"k": 10})
+    bm25.k = 7
+    chroma_ret = vector_store.as_retriever(search_kwargs={"k": 7})
 
-    return EnsembleRetriever(retrievers=[bm25, chroma_retriever], weights=[0.5, 0.5])
+    # Returning both retrievers separately to bypass EnsembleRetriever errors
+    return bm25, chroma_ret
 
 # --- UI Controls ---
 selection = st.selectbox("Select Domain:", ["Both", "Constitution", "BNS"])
-active_retriever = get_retriever_for_domain(selection)
+bm25_retriever, chroma_retriever = get_retrievers_for_domain(selection)
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
@@ -124,7 +124,16 @@ Answer:
 prompt = ChatPromptTemplate.from_template(template)
 
 def format_docs(docs):
-    return "\n\n---\n\n".join([f"[Source: {d.metadata.get('source_category', 'Unknown')}]\n{d.page_content}" for d in docs])
+    # Custom logic to remove duplicate contents
+    seen_texts = set()
+    clean_texts = []
+    for d in docs:
+        text = d.page_content
+        if text not in seen_texts:
+            seen_texts.add(text)
+            source = d.metadata.get("source_category", "Unknown")
+            clean_texts.append(f"[Source: {source}]\n{text}")
+    return "\n\n---\n\n".join(clean_texts)
 
 user_question = st.text_input("🧑‍⚖️ Your Question:")
 
@@ -132,8 +141,12 @@ if st.button("Get Answer"):
     if user_question:
         with st.spinner("Searching strictly within selected domain..."):
             try:
-                docs = active_retriever.invoke(user_question)
-                context_text = format_docs(docs)
+                # Manually combining BM25 and ChromaDB results
+                bm25_docs = bm25_retriever.invoke(user_question)
+                chroma_docs = chroma_retriever.invoke(user_question)
+                combined_docs = bm25_docs + chroma_docs
+                
+                context_text = format_docs(combined_docs)
                 
                 chain = prompt | llm | StrOutputParser()
                 response = chain.invoke({
@@ -146,4 +159,4 @@ if st.button("Get Answer"):
                 st.write(response)
             except Exception as e:
                 st.error(f"Error: {e}")
-    
+                
