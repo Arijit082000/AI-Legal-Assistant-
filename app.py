@@ -7,15 +7,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
-from langchain_classic.retrievers import EnsembleRetriever
+from langchain.retrievers import EnsembleRetriever
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
-# --- Sleep Mode Fix ---
-# If inactive for a few hours on Streamlit Cloud, the app goes to sleep.
-# This JavaScript code sends a signal from the browser every 5 minutes to keep the session active.
+# --- Sleep Mode Prevention ---
 def prevent_sleep_mode():
     components.html(
         """
@@ -23,7 +20,7 @@ def prevent_sleep_mode():
         setInterval(function() {
             window.parent.document.dispatchEvent(new Event('mousemove'));
             console.log("Anti-sleep ping sent.");
-        }, 300000); // Every 5 minutes
+        }, 300000);
         </script>
         """,
         height=0,
@@ -42,87 +39,78 @@ if not api_key:
     st.stop()
 os.environ["GOOGLE_API_KEY"] = api_key
 
-# --- Data Loading and Caching ---
+# --- Document Loading with Caching ---
 @st.cache_resource
-def load_and_process_documents():
-    # Note: These files must be present in your local directory or GitHub repository
+def load_and_split_docs():
     CONSTITUTION_PDF_PATH = "data/The constitution of India.pdf"
-    BNS_PDF_PATH = "data/Indian Penal Code.pdf" # Your previous code had IPC, BNS is used here
+    BNS_PDF_PATH = "data/Indian Penal Code.pdf"
 
-    def load_pdf(file_path, category_name):
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+        separators=["\n\n", "\n", ".", " ", ""]
+    )
+
+    def process(path, category):
         try:
-            loader = PyPDFLoader(file_path)
-            pages = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200,
-                separators=["\n\n", "\n", ".", " ", ""]
-            )
-            docs = text_splitter.split_documents(pages)
-            for doc in docs:
-                doc.metadata["source_category"] = category_name
-            return docs
+            loader = PyPDFLoader(path)
+            docs = loader.load()
+            split_docs = splitter.split_documents(docs)
+            for d in split_docs:
+                d.metadata["source_category"] = category
+            return split_docs
         except Exception as e:
-            st.error(f"Error loading {file_path}: {e}")
+            st.error(f"Error loading {path}: {e}")
             return []
 
-    const_docs = load_pdf(CONSTITUTION_PDF_PATH, "Constitution")
-    bns_docs = load_pdf(BNS_PDF_PATH, "BNS")
-    
+    const_docs = process(CONSTITUTION_PDF_PATH, "Constitution")
+    bns_docs = process(BNS_PDF_PATH, "BNS")
     return const_docs, bns_docs
 
-const_docs, bns_docs = load_and_process_documents()
-all_docs = const_docs + bns_docs
+const_docs, bns_docs = load_and_split_docs()
 
+# --- Cached Retriever Setup per Domain ---
 @st.cache_resource
-def setup_retrievers(_docs_list):
+def get_retriever_for_domain(domain_name):
+    if domain_name == "Constitution":
+        selected_docs = const_docs
+    elif domain_name == "BNS":
+        selected_docs = bns_docs
+    else:
+        selected_docs = const_docs + bns_docs
+
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     
-    # Creating Chroma Vector Store
+    # Unique collection name to avoid Chroma mixing up the domains
     vector_store = Chroma.from_documents(
-        documents=_docs_list,
+        documents=selected_docs,
         embedding=embeddings,
-        collection_name="legal_docs_local_final_db"
+        collection_name=f"legal_db_{domain_name.lower()}"
     )
-    
-    return vector_store, _docs_list
 
-# --- Filtering Logic based on Dropdown ---
+    bm25 = BM25Retriever.from_documents(selected_docs)
+    bm25.k = 10
+    chroma_retriever = vector_store.as_retriever(search_kwargs={"k": 10})
+
+    return EnsembleRetriever(retrievers=[bm25, chroma_retriever], weights=[0.5, 0.5])
+
+# --- UI Controls ---
 selection = st.selectbox("Select Domain:", ["Both", "Constitution", "BNS"])
+active_retriever = get_retriever_for_domain(selection)
 
-# Filter documents based on selection
-if selection == "Constitution":
-    filtered_docs = const_docs
-elif selection == "BNS":
-    filtered_docs = bns_docs
-else:
-    filtered_docs = all_docs
-
-# Setup retriever based on filtered data
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-vector_store = Chroma.from_documents(documents=filtered_docs, embedding=embeddings)
-
-bm25_retriever = BM25Retriever.from_documents(filtered_docs)
-bm25_retriever.k = 10
-vector_retriever = vector_store.as_retriever(search_kwargs={"k": 10})
-
-retriever = EnsembleRetriever(
-    retrievers=[bm25_retriever, vector_retriever], weights=[0.5, 0.5]
-)
-
-# --- LLM and Prompt Setup ---
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash") # Stable version for Streamlit
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
 template = """
-You are an expert AI Legal Assistant specializing in the Constitution of India, and BNS.
+You are an expert AI Legal Assistant.
+Current Selected Domain Filter: {selected_domain}
 
-First, carefully review the retrieved context below (pay attention to the [Source: ...] tags).
-Try to answer the user's question completely based on this context.
+STRICT DOMAIN BOUNDARY RULE:
+1. If Current Selected Domain is 'Constitution': Answer ONLY using the Constitution of India. If the question asks about IPC/BNS sections, explicitly refuse and state: "This topic falls under BNS/IPC. Please change the domain filter to BNS or Both."
+2. If Current Selected Domain is 'BNS': Answer ONLY using BNS / IPC. If the question asks about Articles or Constitutional topics (such as Article 370, Fundamental Rights, etc.), explicitly refuse and state: "This topic falls under the Constitution of India. Please change the domain filter to Constitution or Both."
+3. If Current Selected Domain is 'Both': You can freely answer from either or both sources.
 
-⚠️ CRITICAL FALLBACK RULE (THE INDEX TRAP BYPASS):
-If the context is incomplete, missing, or only shows the index/heading, DO NOT refuse to answer.
-Instead, gracefully use your internal expert training to provide the exact legal text and explanation.
-If you use your internal knowledge, you MUST append this exact disclaimer at the bottom:
+Fallback Rule (Index Trap):
+If the question is within the allowed domain but the retrieved context only has headings or table-of-contents fragments, answer from internal knowledge and add:
 "*(Note: Retrieved PDF context was limited by the Table of Contents trap. This full detail is provided from my internal legal knowledge base.)*"
 
 Context:
@@ -132,31 +120,30 @@ Question: {question}
 
 Answer:
 """
+
 prompt = ChatPromptTemplate.from_template(template)
 
 def format_docs(docs):
-    clean_texts = []
-    for doc in docs:
-        source = doc.metadata.get("source_category", "Unknown Source")
-        safe_text = f"[Source: {source}]\n{doc.page_content}"
-        clean_texts.append(safe_text)
-    return "\n\n---\n\n".join(clean_texts)
+    return "\n\n---\n\n".join([f"[Source: {d.metadata.get('source_category', 'Unknown')}]\n{d.page_content}" for d in docs])
 
-# --- Chat Interface ---
 user_question = st.text_input("🧑‍⚖️ Your Question:")
 
 if st.button("Get Answer"):
     if user_question:
-        with st.spinner("Analyzing legal documents..."):
+        with st.spinner("Searching strictly within selected domain..."):
             try:
-                docs = retriever.invoke(user_question)
+                docs = active_retriever.invoke(user_question)
                 context_text = format_docs(docs)
                 
                 chain = prompt | llm | StrOutputParser()
-                response = chain.invoke({"context": context_text, "question": user_question})
+                response = chain.invoke({
+                    "context": context_text,
+                    "question": user_question,
+                    "selected_domain": selection
+                })
                 
                 st.markdown("### ✅ Answer:")
                 st.write(response)
             except Exception as e:
-                st.error(f"An error occurred: {e}")
-
+                st.error(f"Error: {e}")
+        
