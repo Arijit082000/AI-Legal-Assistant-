@@ -102,6 +102,7 @@ def get_retrievers_for_domain(domain_name):
     return bm25, chroma_ret
 
 # --- UI Controls ---
+st.sidebar.markdown("Developed by **Arijit Dasgupta**")
 selection = st.selectbox("Select Domain:", ["Both", "Constitution", "BNS"])
 bm25_retriever, chroma_retriever = get_retrievers_for_domain(selection)
 
