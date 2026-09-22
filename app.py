@@ -47,7 +47,7 @@ os.environ["GOOGLE_API_KEY"] = api_key
 def load_and_process_documents():
     # Note: These files must be present in your local directory or GitHub repository
     CONSTITUTION_PDF_PATH = "data/The constitution of India.pdf"
-    BNS_PDF_PATH = "data/BNS.pdf" # Your previous code had IPC, BNS is used here
+    BNS_PDF_PATH = "data/Indian Penal Code.pdf" # Your previous code had IPC, BNS is used here
 
     def load_pdf(file_path, category_name):
         try:
