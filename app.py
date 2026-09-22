@@ -1,5 +1,6 @@
 import os
 import time
+import re
 import streamlit as st
 import streamlit.components.v1 as components
 from langchain_community.document_loaders import PyPDFLoader
@@ -54,6 +55,12 @@ def load_and_split_docs():
         try:
             loader = PyPDFLoader(path)
             docs = loader.load()
+            
+            # --- DATA CLEANING: Remove Page Numbers ---
+            for doc in docs:
+                doc.page_content = re.sub(r'^\s*\d+\s*$', '', doc.page_content, flags=re.MULTILINE)
+            # ------------------------------------------
+            
             split_docs = splitter.split_documents(docs)
             for d in split_docs:
                 d.metadata["source_category"] = category
@@ -84,7 +91,7 @@ def get_retrievers_for_domain(domain_name):
     vector_store = Chroma.from_documents(
         documents=selected_docs,
         embedding=embeddings,
-        collection_name=f"legal_db_{domain_name.lower()}"
+        collection_name=f"legal_db_{domain_name.lower()}_v2"
     )
 
     bm25 = BM25Retriever.from_documents(selected_docs)
@@ -108,7 +115,7 @@ STRICT DOMAIN BOUNDARY RULE:
 1. If Current Selected Domain is 'Constitution': Answer ONLY using the Constitution of India. If the question asks about IPC/BNS sections, explicitly refuse and state: "This topic falls under BNS/IPC. Please change the domain filter to BNS or Both."
 2. If Current Selected Domain is 'BNS': Answer ONLY using BNS / IPC. If the question asks about Articles or Constitutional topics (such as Article 370, Fundamental Rights, etc.), explicitly refuse and state: "This topic falls under the Constitution of India. Please change the domain filter to Constitution or Both."
 3. If Current Selected Domain is 'Both': You can freely answer from either or both sources.
-4. TERMINOLOGY RULE: The Constitution contains "Articles", whereas BNS/IPC contain "Sections". If a user asks for a "Section" within the Constitution, or an "Article" within BNS/IPC, immediately point out the incorrect terminology. NEVER invent or hallucinate a Constitutional Section.
+4. TERMINOLOGY RULE: The Constitution contains "Articles", whereas BNS/IPC contain "Sections". If a user asks for a "Section" within the Constitution, or an "Article" within BNS/IPC, immediately point out the incorrect terminology.
 5. PAGE NUMBER RULE: Ignore page numbers in the context. Only answer based on actual Article or Section numbers. Do not confuse a page number with a legal section.
 
 Fallback Rule (Index Trap):
@@ -161,4 +168,4 @@ if st.button("Get Answer"):
                 st.write(response)
             except Exception as e:
                 st.error(f"Error: {e}")
-                
+    
