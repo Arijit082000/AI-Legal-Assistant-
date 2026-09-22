@@ -3,9 +3,11 @@ langchain
 langchain-core
 langchain-community
 langchain-google-genai
-chromadb
+chromadb==0.4.24
+pysqlite3-binary
 pypdf
 sentence-transformers
+torchvision
 langchain-text-splitters
 langchain_huggingface
 rank_bm25
