@@ -5,7 +5,7 @@ langchain-community
 langchain-google-genai
 chromadb==0.4.24
 pysqlite3-binary
-pypdf
+pymupdf
 sentence-transformers
 torchvision
 langchain-text-splitters
