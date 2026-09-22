@@ -3,7 +3,7 @@ import time
 import re
 import streamlit as st
 import streamlit.components.v1 as components
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -53,7 +53,8 @@ def load_and_split_docs():
 
     def process(path, category):
         try:
-            loader = PyPDFLoader(path)
+            # Using PyMuPDFLoader instead of PyPDFLoader to bypass EOF errors
+            loader = PyMuPDFLoader(path)
             docs = loader.load()
             
             # --- DATA CLEANING: Remove Page Numbers ---
@@ -91,14 +92,13 @@ def get_retrievers_for_domain(domain_name):
     vector_store = Chroma.from_documents(
         documents=selected_docs,
         embedding=embeddings,
-        collection_name=f"legal_db_{domain_name.lower()}_v2"
+        collection_name=f"legal_db_{domain_name.lower()}_v3"
     )
 
     bm25 = BM25Retriever.from_documents(selected_docs)
     bm25.k = 7
     chroma_ret = vector_store.as_retriever(search_kwargs={"k": 7})
 
-    # Returning both retrievers separately to bypass EnsembleRetriever errors
     return bm25, chroma_ret
 
 # --- UI Controls ---
@@ -133,7 +133,6 @@ Answer:
 prompt = ChatPromptTemplate.from_template(template)
 
 def format_docs(docs):
-    # Custom logic to remove duplicate contents
     seen_texts = set()
     clean_texts = []
     for d in docs:
@@ -150,7 +149,6 @@ if st.button("Get Answer"):
     if user_question:
         with st.spinner("Searching strictly within selected domain..."):
             try:
-                # Manually combining BM25 and ChromaDB results
                 bm25_docs = bm25_retriever.invoke(user_question)
                 chroma_docs = chroma_retriever.invoke(user_question)
                 combined_docs = bm25_docs + chroma_docs
@@ -168,4 +166,4 @@ if st.button("Get Answer"):
                 st.write(response)
             except Exception as e:
                 st.error(f"Error: {e}")
-    
+                
