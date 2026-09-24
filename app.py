@@ -46,8 +46,8 @@ def load_and_split_docs():
     BNS_PDF_PATH = "data/Indian Penal Code.pdf"
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=2000,
+        chunk_overlap=300,
         separators=["\n\n", "\n", ".", " ", ""]
     )
 
