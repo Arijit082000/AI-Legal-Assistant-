@@ -12,23 +12,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-# --- Sleep Mode Prevention ---
-def prevent_sleep_mode():
-    components.html(
-        """
-        <script>
-        setInterval(function() {
-            window.parent.document.dispatchEvent(new Event('mousemove'));
-            console.log("Anti-sleep ping sent.");
-        }, 300000);
-        </script>
-        """,
-        height=0,
-        width=0,
-    )
 
 st.set_page_config(page_title="AI Legal Assistant", layout="wide")
-prevent_sleep_mode()
+
 
 st.title("⚖️ AI Legal Assistant (Constitution & BNS)")
 
