@@ -31,8 +31,8 @@ def load_and_split_docs():
     BNS_PDF_PATH = "data/Indian Penal Code.pdf"
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=2000,
-        chunk_overlap=300,
+        chunk_size=4000,
+        chunk_overlap=500,
         separators=["\n\n", "\n", ".", " ", ""]
     )
 
@@ -77,12 +77,12 @@ def get_retrievers_for_domain(domain_name):
     vector_store = Chroma.from_documents(
         documents=selected_docs,
         embedding=embeddings,
-        collection_name=f"legal_db_{domain_name.lower()}_v3"
+        collection_name=f"legal_db_{domain_name.lower()}_v4"
     )
 
     bm25 = BM25Retriever.from_documents(selected_docs)
-    bm25.k = 7
-    chroma_ret = vector_store.as_retriever(search_kwargs={"k": 7})
+    bm25.k = 20
+    chroma_ret = vector_store.as_retriever(search_kwargs={"k": 20})
 
     return bm25, chroma_ret
 
