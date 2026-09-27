@@ -2,8 +2,7 @@
 
 This project is an AI-powered legal assistant designed to provide accurate answers to legal queries regarding the **Constitution of India** and the **Bharatiya Nyaya Sanhita (BNS) / IPC**. It is built using an advanced RAG (Retrieval-Augmented Generation) pipeline and powered by the Google Gemini 2.5 Flash model.
 
-🚀 **Live App Link:** [Insert your Streamlit app link here] (e.g., https://your-app-name.streamlit.app)
-
+🚀 **Live App Link:** https://indian-legal-ai-assistant.streamlit.app/
 ---
 
 ## ✨ Key Features
